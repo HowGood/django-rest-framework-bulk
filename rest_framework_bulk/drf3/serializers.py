@@ -35,6 +35,34 @@ class BulkSerializerMixin(object):
 class BulkListSerializer(ListSerializer):
     update_lookup_field = 'id'
 
+    def to_internal_value(self, data):
+        try:
+            return super(BulkListSerializer, self).to_internal_value(data)
+        except AttributeError:
+            pass
+
+        instance_map = {
+            getattr(i, self.update_lookup_field): i for i in self.instance
+        }
+
+        ret = []
+        errors = []
+        for item in data:
+            field = item[self.update_lookup_field]
+            self.child.instance = instance_map.get(field)
+            try:
+                validated = self.child.run_validation(item)
+            except ValidationError as exc:
+                errors.append(exc.detail)
+            else:
+                ret.append(validated)
+                errors.append({})
+
+        if any(errors):
+            raise ValidationError(errors)
+
+        return ret
+
     def update(self, queryset, all_validated_data):
         id_attr = getattr(self.child.Meta, 'update_lookup_field', 'id')
 
